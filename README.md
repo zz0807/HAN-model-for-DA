@@ -4,3 +4,5 @@ A implementation of (Quan, EACL)A Hierarchical Neural Model for Learning Sequenc
 The maptask dataset have been preprocessed and split into train/dev/test randomly.
 
 run train.py to start training the HAN model
+
+only support cpu now
