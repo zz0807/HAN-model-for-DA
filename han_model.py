@@ -35,29 +35,30 @@ class sentenceLevelRNN(nn.Module):
 
 class HAN(nn.Module):
 
-    def __init__(self, vocab_size, embed_size, hidden_num, class_num, con_len, sen_len):
+    def __init__(self, vocab_size, embed_size, sen_hidden_num, con_hidden_num, class_num, embed_y_size):
         super(HAN, self).__init__()
-        self.senRNN = sentenceLevelRNN(vocab_size, embed_size, hidden_num)
+        self.senRNN = sentenceLevelRNN(vocab_size, embed_size, sen_hidden_num)
         # self.conRNN = nn.LSTM(         # if use nn.RNN(), it hardly learns
         #     input_size=hidden_num,
         #     hidden_size=hidden_num,         # rnn hidden unit
         #     num_layers=1,           # number of rnn layer
         #     batch_first=True,       # input & output will has batch size as 1s dimension. e.g. (batch, time_step, input_size)
         # )
-        self.conRNN = nn.LSTMCell(hidden_num, hidden_num)
-        self.out = nn.Linear(hidden_num, class_num)
+        self.conRNN = nn.LSTMCell(sen_hidden_num, con_hidden_num)
+        self.hx = torch.randn(1, con_hidden_num)
+        self.cx = torch.randn(1, con_hidden_num)
+        self.out = nn.Linear(con_hidden_num, class_num)
         # attention parameter
-        self.w_in = nn.Linear(embed_size, hidden_num)
-        self.w_co = nn.Linear(hidden_num, hidden_num)
-        self.b = Variable(torch.FloatTensor(np.zeros(hidden_num)), requires_grad=True)
-        self.u = nn.Linear(hidden_num, 1)
+        self.w_in = nn.Linear(embed_size, embed_y_size)
+        self.w_co = nn.Linear(con_hidden_num, embed_y_size)
+        self.b = Variable(torch.FloatTensor(np.zeros(embed_y_size)), requires_grad=True)
+        self.u = nn.Linear(embed_y_size, 1)
+        self.embed_y = nn.Embedding(class_num, embed_y_size)
 
-    def forward(self, x, sentence_lens, hidden_num):
+    def forward(self, x, sentence_lens):
         sen_vec, x_embedding = self.senRNN(x, sentence_lens)
         # sen_vec_view = sen_vec.unsqueeze(0)
         # r_out, (h_n, h_c) = self.conRNN(sen_vec_view)
-        hx = torch.randn(1, hidden_num)
-        cx = torch.randn(1, hidden_num)
         r_out = list()
         for i in range(x_embedding.shape[0]):
             if i >= 1:
@@ -65,10 +66,10 @@ class HAN(nn.Module):
             else:
                 att = torch.from_numpy(np.full((1, sen_vec.shape[1]), 1.0/sen_vec.shape[1], "double"))
             sen_vec_1 = torch.mm(att, sen_vec[i, :, :].double())
-            hx, cx = self.conRNN(sen_vec_1.float(), (hx, cx))
+            hx, cx = self.conRNN(sen_vec_1.float(), (self.hx, self.cx))
             out = F.log_softmax(self.out(hx), dim=1)
             pre = torch.max(out, 1)[1].data.numpy()[0]
-            eyt_1 = self.out.weight[pre, :]
+            eyt_1 = self.embed_y(torch.LongTensor([pre]))
             r_out.append(hx)
         r_out_cat = r_out[0]
         for i in range(1, len(r_out)):
