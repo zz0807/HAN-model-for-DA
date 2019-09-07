@@ -45,8 +45,8 @@ class HAN(nn.Module):
         #     batch_first=True,       # input & output will has batch size as 1s dimension. e.g. (batch, time_step, input_size)
         # )
         self.conRNN = nn.LSTMCell(sen_hidden_num, con_hidden_num)
-        self.hx = torch.randn(1, con_hidden_num)
-        self.cx = torch.randn(1, con_hidden_num)
+        self.hx = torch.zeros(1, con_hidden_num)
+        self.cx = torch.zeros(1, con_hidden_num)
         self.out = nn.Linear(con_hidden_num, class_num)
         # attention parameter
         self.w_in = nn.Linear(embed_size, embed_y_size)
@@ -54,19 +54,24 @@ class HAN(nn.Module):
         self.b = Variable(torch.FloatTensor(np.zeros(embed_y_size)), requires_grad=True)
         self.u = nn.Linear(embed_y_size, 1)
         self.embed_y = nn.Embedding(class_num, embed_y_size)
+        self.embed_y.weight.requires_grad = True
 
     def forward(self, x, sentence_lens):
         sen_vec, x_embedding = self.senRNN(x, sentence_lens)
         # sen_vec_view = sen_vec.unsqueeze(0)
         # r_out, (h_n, h_c) = self.conRNN(sen_vec_view)
+        hx = self.hx
+        cx = self.cx
         r_out = list()
         for i in range(x_embedding.shape[0]):
             if i >= 1:
-                att = self.__attention_layer(x_embedding[i, :, :], hx, eyt_1).double().view(1, -1)
+                att = self.__attention_layer(x_embedding[i, 0:sentence_lens[i], :], hx, eyt_1).double().view(1, -1)
             else:
-                att = torch.from_numpy(np.full((1, sen_vec.shape[1]), 1.0/sen_vec.shape[1], "double"))
-            sen_vec_1 = torch.mm(att, sen_vec[i, :, :].double())
-            hx, cx = self.conRNN(sen_vec_1.float(), (self.hx, self.cx))
+                att = torch.from_numpy(np.full((1, sentence_lens[i]), 1.0/sentence_lens[i], "double"))
+            sen_vec_1 = torch.mm(att, sen_vec[i, 0:sentence_lens[i], :].double())
+            # sen_vec_1 = sen_vec[i, sentence_lens[i]-1, :]
+            # sen_vec_1 = sen_vec_1.unsqueeze(0)
+            hx, cx = self.conRNN(sen_vec_1.float(), (hx, cx))
             out = F.log_softmax(self.out(hx), dim=1)
             pre = torch.max(out, 1)[1].data.numpy()[0]
             eyt_1 = self.embed_y(torch.LongTensor([pre]))
